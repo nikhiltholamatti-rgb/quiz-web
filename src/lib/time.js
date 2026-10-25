@@ -24,24 +24,31 @@ export function formatSecondsDetailed(totalSeconds) {
 
 /**
  * Calculate remaining seconds from started_at and duration_seconds with server clock offset.
- * Recomputed dynamically on each tick without trusting setInterval accumulation.
+ * Recomputed dynamically on each tick from authoritative elapsed time without trusting setInterval accumulation.
  *
  * @param {string|Date|null} startedAt - Server started_at timestamp
- * @param {number} durationSeconds - Game duration in seconds (default 300)
+ * @param {number} durationSeconds - Game duration in seconds (default 360)
  * @param {number} offsetMs - Server time minus local time in milliseconds
- * @returns {number} Remaining seconds (>= 0)
+ * @returns {number} Remaining seconds (between 0 and durationSeconds)
  */
-export function calculateRemainingSeconds(startedAt, durationSeconds = 300, offsetMs = 0) {
-  if (!startedAt) return durationSeconds;
+export function calculateRemainingSeconds(startedAt, durationSeconds = 360, offsetMs = 0) {
+  const duration = Number(durationSeconds) || 360;
+  if (!startedAt) return duration;
 
   const startMs = new Date(startedAt).getTime();
-  if (isNaN(startMs)) return durationSeconds;
+  if (isNaN(startMs)) return duration;
 
-  const endsAtMs = startMs + (durationSeconds * 1000);
+  // Authoritative server timestamp synchronized with client offset
   const currentSyncedTimeMs = Date.now() + (offsetMs || 0);
-  const remainingMs = endsAtMs - currentSyncedTimeMs;
 
-  return Math.max(0, Math.ceil(remainingMs / 1000));
+  // Authoritative elapsed time since session start
+  const elapsedMs = Math.max(0, currentSyncedTimeMs - startMs);
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+
+  // Authoritative remaining time: exactly duration at start, decrementing by elapsed seconds, stopping cleanly at 0
+  const remaining = Math.max(0, duration - elapsedSeconds);
+
+  return Math.min(duration, remaining);
 }
 
 /**
@@ -55,6 +62,6 @@ export function calculateElapsedSeconds(startedAt, offsetMs = 0) {
   const startMs = new Date(startedAt).getTime();
   if (isNaN(startMs)) return 0;
   const currentSyncedTimeMs = Date.now() + (offsetMs || 0);
-  const elapsedMs = currentSyncedTimeMs - startMs;
-  return Math.max(0, Math.floor(elapsedMs / 1000));
+  const elapsedMs = Math.max(0, currentSyncedTimeMs - startMs);
+  return Math.floor(elapsedMs / 1000);
 }

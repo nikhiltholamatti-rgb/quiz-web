@@ -36,7 +36,7 @@ export default function Host() {
   const [isStartingGame, setIsStartingGame] = useState(false);
   const [isResettingGame, setIsResettingGame] = useState(false);
   const [healthStatus, setHealthStatus] = useState({ ok: true, checking: false });
-  const [remainingSeconds, setRemainingSeconds] = useState(300);
+  const [remainingSeconds, setRemainingSeconds] = useState(360);
 
   // Podium sequence states: 'idle' | 'calculating' | 'reveal_third' | 'reveal_second' | 'reveal_first' | 'empty'
   const [podiumStage, setPodiumStage] = useState('idle');

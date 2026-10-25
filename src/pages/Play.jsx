@@ -66,9 +66,10 @@ export default function Play() {
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [isAnswerLocking, setIsAnswerLocking] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
-  const [remainingSeconds, setRemainingSeconds] = useState(300);
+  const [remainingSeconds, setRemainingSeconds] = useState(360);
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
   const [loadQuestionsError, setLoadQuestionsError] = useState(null);
+  const [retryQuestionsCount, setRetryQuestionsCount] = useState(0);
 
   // Anti-cheat state & refs
   const [showToast, setShowToast] = useState(false);
@@ -288,7 +289,7 @@ export default function Play() {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [gameState.phase, alreadyPlayed, quizFinished, questions.length]);
+  }, [gameState.phase, alreadyPlayed, quizFinished, questions.length, retryQuestionsCount]);
 
   // Submit score with retry backoff
   const submitScoreWithRetry = async (finalAnswersArray) => {
@@ -778,7 +779,10 @@ export default function Play() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => window.location.reload()}
+                  onClick={() => {
+                    setLoadQuestionsError(null);
+                    setRetryQuestionsCount((c) => c + 1);
+                  }}
                   className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-mono text-xs uppercase"
                 >
                   Retry Connection

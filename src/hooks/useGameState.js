@@ -8,7 +8,7 @@ export function useGameState() {
   const [gameState, setGameState] = useState({
     phase: 'lobby',
     started_at: null,
-    duration_seconds: 300,
+    duration_seconds: 360,
     session_id: 1,
     loading: true,
     error: null,
@@ -40,7 +40,7 @@ export function useGameState() {
         setGameState({
           phase: data.phase || 'lobby',
           started_at: data.started_at || null,
-          duration_seconds: data.duration_seconds || 300,
+          duration_seconds: data.duration_seconds || 360,
           session_id: data.session_id || 1,
           loading: false,
           error: null,
@@ -83,7 +83,7 @@ export function useGameState() {
               setGameState({
                 phase: updated.phase || 'lobby',
                 started_at: updated.started_at || null,
-                duration_seconds: updated.duration_seconds || 300,
+                duration_seconds: updated.duration_seconds || 360,
                 session_id: updated.session_id || 1,
                 loading: false,
                 error: null,

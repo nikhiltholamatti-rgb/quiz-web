@@ -20,7 +20,28 @@ export function useServerClock() {
 
       try {
         const t0 = Date.now();
-        // Lightweight request to read the response Date header from Supabase
+        // Method 1: Call RPC returning epoch milliseconds directly from PostgreSQL clock_timestamp()
+        // This avoids browser CORS header stripping of HTTP Date headers
+        const { data: serverTimeMs, error } = await supabase.rpc('get_server_time');
+        const t1 = Date.now();
+
+        if (!error && typeof serverTimeMs === 'number') {
+          const roundTrip = t1 - t0;
+          const estimatedServerNow = serverTimeMs + Math.floor(roundTrip / 2);
+          const computedOffset = estimatedServerNow - t1;
+          if (isMounted) {
+            setOffset(computedOffset);
+            setIsSynced(true);
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('RPC server clock sync failed, checking fallback:', err);
+      }
+
+      try {
+        const t0 = Date.now();
+        // Method 2 (Fallback): Query REST endpoint header if available
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -33,15 +54,14 @@ export function useServerClock() {
         const serverDateHeader = res.headers.get('date');
         if (serverDateHeader && isMounted) {
           const serverTimeMs = new Date(serverDateHeader).getTime();
-          // Adjust for half round-trip latency
-          const estimatedServerNow = serverTimeMs + (roundTrip / 2);
+          const estimatedServerNow = serverTimeMs + Math.floor(roundTrip / 2);
           const computedOffset = estimatedServerNow - t1;
           setOffset(computedOffset);
           setIsSynced(true);
           return;
         }
       } catch (err) {
-        console.warn('Server clock sync failed, defaulting offset to 0:', err);
+        console.warn('Server clock fallback sync failed:', err);
       }
 
       if (isMounted) {

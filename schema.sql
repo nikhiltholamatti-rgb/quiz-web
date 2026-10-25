@@ -4,18 +4,31 @@
 -- Safe to re-run: Does NOT drop tables or delete submissions or existing data.
 -- =========================================================================
 
--- 1. Game State Table (Single row: phase, started_at, duration_seconds)
+-- 1. Game State Table (Single row: phase, started_at, duration_seconds, session_id)
 CREATE TABLE IF NOT EXISTS public.game_state (
   id INT PRIMARY KEY DEFAULT 1,
   phase TEXT NOT NULL DEFAULT 'lobby' CHECK (phase IN ('lobby', 'playing', 'finished')),
   started_at TIMESTAMPTZ NULL,
-  duration_seconds INT NOT NULL DEFAULT 300 -- 5-minute default game duration
+  duration_seconds INT NOT NULL DEFAULT 360, -- 6-minute (360 seconds) game duration
+  session_id INT NOT NULL DEFAULT 1
 );
 
+-- Ensure columns exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'game_state' AND column_name = 'session_id') THEN
+    ALTER TABLE public.game_state ADD COLUMN session_id INT NOT NULL DEFAULT 1;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'game_state' AND column_name = 'duration_seconds') THEN
+    ALTER TABLE public.game_state ADD COLUMN duration_seconds INT NOT NULL DEFAULT 360;
+  END IF;
+END $$;
+
 -- Ensure singleton row exists
-INSERT INTO public.game_state (id, phase, started_at, duration_seconds)
-VALUES (1, 'lobby', NULL, 300)
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.game_state (id, phase, started_at, duration_seconds, session_id)
+VALUES (1, 'lobby', NULL, 360, 1)
+ON CONFLICT (id) DO UPDATE
+SET duration_seconds = 360;
 
 -- Enable Realtime for game_state
 DO $$
@@ -92,6 +105,19 @@ END $$;
 -- RPC FUNCTIONS
 -- =========================================================================
 
+-- RPC: get_server_time()
+-- Returns PostgreSQL epoch milliseconds directly to ensure host and participants
+-- calculate the identical remaining time regardless of client device clock skew.
+CREATE OR REPLACE FUNCTION public.get_server_time()
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_server_time() TO anon, authenticated;
+
 -- RPC: get_questions()
 -- Returns 20 questions with option_a, option_b, option_c, option_d.
 -- STRICTLY OMITS correct_option to protect answer key from player devices.
@@ -107,10 +133,13 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+#variable_conflict use_column
 DECLARE
   v_phase TEXT;
 BEGIN
-  SELECT phase INTO v_phase FROM public.game_state WHERE id = 1;
+  SELECT gs.phase INTO v_phase
+  FROM public.game_state gs
+  WHERE gs.id = 1;
 
   IF v_phase <> 'playing' THEN
     RETURN;
@@ -130,8 +159,10 @@ BEGIN
 END;
 $$;
 
+GRANT EXECUTE ON FUNCTION public.get_questions() TO anon, authenticated;
+
 -- RPC: start_game(p_usn TEXT)
--- admin USN: lobby -> playing, stamps started_at with server UTC timestamp
+-- admin USN: lobby -> playing, stamps started_at with server UTC timestamp and sets 360s duration
 CREATE OR REPLACE FUNCTION public.start_game(p_usn TEXT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -145,7 +176,8 @@ BEGIN
   UPDATE public.game_state
   SET
     phase = 'playing',
-    started_at = timezone('utc'::text, now())
+    started_at = timezone('utc'::text, now()),
+    duration_seconds = 360
   WHERE id = 1;
 
   RETURN TRUE;
@@ -165,10 +197,10 @@ DECLARE
   v_phase TEXT;
   v_elapsed_seconds DOUBLE PRECISION;
 BEGIN
-  SELECT phase, started_at, duration_seconds
+  SELECT gs.phase, gs.started_at, gs.duration_seconds
   INTO v_phase, v_started_at, v_duration
-  FROM public.game_state
-  WHERE id = 1;
+  FROM public.game_state gs
+  WHERE gs.id = 1;
 
   IF v_phase = 'finished' THEN
     RETURN TRUE;
@@ -193,7 +225,7 @@ END;
 $$;
 
 -- RPC: reset_game(p_usn TEXT)
--- admin USN -> back to lobby, advances session_id, preserves historical leaderboard
+-- admin USN -> back to lobby, advances session_id, resets started_at, ensures duration_seconds is 360
 CREATE OR REPLACE FUNCTION public.reset_game(p_usn TEXT)
 RETURNS void
 LANGUAGE plpgsql
@@ -208,6 +240,7 @@ BEGIN
   SET
     phase = 'lobby',
     started_at = NULL,
+    duration_seconds = 360,
     session_id = COALESCE(session_id, 1) + 1
   WHERE id = 1;
 END;
